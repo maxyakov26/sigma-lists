@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sigma lists</title>
+<meta name="description" content="Manage the Yakov Alerts sigma lists from Telegram. The page reads its data from the link and sends changes back to the bot.">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #f6f7f9);
+    --card: var(--tg-theme-secondary-bg-color, #ffffff);
+    --text: var(--tg-theme-text-color, #15181c);
+    --muted: var(--tg-theme-hint-color, #6b7280);
+    --accent: var(--tg-theme-button-color, #2481cc);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --line: rgba(128, 128, 128, 0.22);
+    --add: #1f8a4c;
+    --add-bg: rgba(31, 138, 76, 0.12);
+    --rm: #b42318;
+    --rm-bg: rgba(180, 35, 24, 0.10);
+    --warn-bg: rgba(234, 179, 8, 0.16);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: var(--tg-theme-bg-color, #14161a);
+      --card: var(--tg-theme-secondary-bg-color, #1e2127);
+      --text: var(--tg-theme-text-color, #eef0f3);
+      --muted: var(--tg-theme-hint-color, #9aa3ad);
+      --line: rgba(200, 200, 200, 0.16);
+      --add-bg: rgba(31, 138, 76, 0.22); --rm-bg: rgba(180, 35, 24, 0.22);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  body { padding: 12px 16px 96px; max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 6px 0 2px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+  .banner { background: var(--warn-bg); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin: 0 0 12px; }
+  .card { background: var(--card); border-radius: var(--radius); padding: 14px; margin: 0 0 12px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .card h2 { font-size: 18px; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .card .meta { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
+  .lock { font-size: 14px; color: var(--muted); font-weight: normal; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; min-height: 40px;
+    display: inline-flex; align-items: center; gap: 6px; background: transparent; color: var(--text); font-size: 15px; }
+  .chip small { color: var(--muted); font-size: 12px; }
+  .chip.editable { cursor: pointer; }
+  .chip.rm { text-decoration: line-through; color: var(--rm); background: var(--rm-bg); border-color: transparent; }
+  .chip.add { color: var(--add); background: var(--add-bg); border-color: transparent; font-weight: 600; }
+  .chip .x { font-weight: 700; margin-left: 2px; }
+  .empty { color: var(--muted); font-size: 14px; margin: 0 0 10px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; }
+  .row label { font-size: 14px; color: var(--muted); min-width: 84px; }
+  .grid2 .row label { min-width: 0; white-space: nowrap; }
+  input[type=text], input[type=number], select, textarea {
+    font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; min-height: 44px; width: 100%; }
+  input[type=number] { width: 88px; flex: 0 0 88px; padding: 10px 8px; text-align: center; }
+  textarea { resize: vertical; min-height: 44px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 10px 14px; min-height: 44px; cursor: pointer; }
+  .btn { background: var(--accent); color: var(--accent-text); }
+  .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  .btn.danger { background: transparent; color: var(--rm); border: 1px solid var(--line); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .hint { color: var(--muted); font-size: 13px; margin: -4px 0 10px; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line);
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); display: flex; gap: 10px; align-items: center; }
+  .bar .count { flex: 1; color: var(--muted); font-size: 14px; }
+  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: flex-end; }
+  .sheet.open { display: flex; }
+  .sheet .inner { background: var(--card); width: 100%; max-width: 640px; margin: 0 auto; border-radius: 16px 16px 0 0;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); max-height: 80vh; overflow: auto; }
+  .sheet ul { padding-left: 20px; margin: 8px 0 14px; }
+  .sheet li { margin: 4px 0; }
+  pre { background: var(--bg); border-radius: 10px; padding: 10px; overflow: auto; font-size: 12px; }
+  details summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .err { color: var(--rm); font-size: 14px; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<h1>Sigma lists</h1>
+<p class="sub" id="who"></p>
+<div id="banner"></div>
+<div id="users"></div>
+<div id="lists"></div>
+<div class="card" id="newlist">
+  <details>
+    <summary>＋ New list</summary>
+    <p class="hint">A separate list can have its own alert level. Example: a 2σ list for names you only want to hear about on big days.</p>
+    <div class="row"><label for="nl-name">Short name</label><input type="text" id="nl-name" placeholder="letters or digits, e.g. big" maxlength="12" autocapitalize="none"></div>
+    <div class="row"><label for="nl-label">Shown as</label><input type="text" id="nl-label" placeholder="e.g. Dad's 2σ list" maxlength="40"></div>
+    <div class="grid2">
+      <div class="row"><label for="nl-k">Alert at</label><input type="number" id="nl-k" value="1.75" min="1" max="4" step="0.05"> <span class="hint">σ</span></div>
+      <div class="row"><label for="nl-floor">Floor</label><input type="number" id="nl-floor" value="8" min="0" max="50" step="1"> <span class="hint">%</span></div>
+    </div>
+    <div class="row"><label for="nl-chat">Send cards to</label><select id="nl-chat"><option value="group">the family group</option><option value="dm">my chat with the bot</option></select></div>
+    <p class="err" id="nl-err"></p>
+    <button class="btn ghost" id="nl-add">Create list</button>
+  </details>
+</div>
+
+<div class="bar" id="bar">
+  <div class="count" id="count">No changes yet</div>
+  <button class="btn" id="save" disabled>Save</button>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="inner">
+    <h2 style="margin:0 0 4px">Save these changes?</h2>
+    <p class="hint" id="sheet-hint">The page closes and the bot confirms in the chat.</p>
+    <ul id="sheet-list"></ul>
+    <div class="row">
+      <button class="btn ghost" id="sheet-back">Back</button>
+      <button class="btn" id="sheet-send">Send</button>
+    </div>
+    <details id="sheet-raw" style="display:none"><summary>What is sent</summary><pre id="sheet-json"></pre></details>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---- constants shared with the bot (docs/WEB_LISTS_SPEC.md) ------------------------------
+  const BUILTIN = new Set(["dad", "max"]);
+  const K_RANGE = [1, 4], FLOOR_RANGE = [0, 50], NAME_RE = /^[a-z0-9]{1,12}$/, SYM_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;
+  const MAX_DIFF = 4096, MAX_SYMBOLS = 40, MAX_LISTS = 10;
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const inTelegram = !!(tg && tg.initData);
+
+  // ---- demo state, used only when the page is opened outside Telegram ------------------------
+  const DEMO = {
+    v: 1, me: 123456789, admin: false, generated: "2026-10-05 14:02",
+    chats: {"-5188335421": "Bot test (family group)", "123456789": "your chat with the bot"},
+    users: {"6990945418": "Max", "123456789": "Dad"},
+    pending: {},
+    lists: {
+      dad: {owner: 123456789, label: "Dad's list", chat_id: -5188335421, threshold: 1.75, floor: 0.08,
+            symbols: {AMD: {sigma: 0.041, beta: 3.1, next_earnings: "2026-10-27"}, INTU: {sigma: 0.029, beta: -0.1, next_earnings: "2026-11-20"},
+                      MU: {sigma: 0.048, beta: 3.1, next_earnings: "2026-12-17", last_fire: "2026-07-30 +2.4σ MARKET-WIDE + OWN MOVE"},
+                      STX: {sigma: 0.046, beta: 1.2, next_earnings: "2026-10-27", last_fire: "2026-10-02 −2.4σ SINGLE-NAME"}}},
+      max: {owner: 6990945418, label: "Max's list", chat_id: 6990945418, threshold: 1.75, floor: 0.08,
+            symbols: {INTU: {sigma: 0.029, beta: -0.1, next_earnings: "2026-11-20"}, TSM: {sigma: 0.025, beta: 1.6, next_earnings: "2026-10-15"}}}
+    }
+  };
+
+  // ---- state from the link: #s=<base64url(zlib(json))> --------------------------------------
+  async function readState() {
+    const m = location.hash.match(/[#&]s=([A-Za-z0-9_\-]+)/);
+    if (!m) return null;
+    try {
+      const b64 = m[1].replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - m[1].length % 4) % 4);
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const ds = new DecompressionStream("deflate");                 // zlib framing, as Python's zlib.compress writes it
+      const out = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
+      return JSON.parse(new TextDecoder().decode(out));
+    } catch (e) {
+      console.error("state unreadable", e);
+      return {error: String(e)};
+    }
+  }
+
+  // ---- pending edits ----------------------------------------------------------------------------
+  const pend = {add: {}, rm: {}, set: {}, newLists: {}, del: new Set(), approve: {}};
+  const notes = {};                         // per-list inline message (bad tickers, out-of-range values)
+  let S = null;
+
+  const fmtK = k => (+k).toFixed(2).replace(/0$/, "") + "σ";
+  const fmtPct = f => (f * 100).toFixed(0) + "%";
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const canEdit = name => S.admin || (S.lists[name] && S.lists[name].owner === S.me) || (pend.newLists[name] && pend.newLists[name].owner === S.me);
+  const chatName = id => (S.chats && S.chats[String(id)]) || (id == null ? "nowhere yet" : "chat " + id);
+  const userName = id => (S.users && S.users[String(id)]) || "someone";
+
+  function parseSymbols(text) {
+    const seen = new Set(), ok = [], bad = [];
+    text.replace(/[,;]/g, " ").split(/\s+/).forEach(t => {
+      const s = t.replace(/^\$/, "").toUpperCase();
+      if (!s) return;
+      if (SYM_RE.test(s)) { if (!seen.has(s)) { seen.add(s); ok.push(s); } } else bad.push(s);
+    });
+    return {ok, bad};
+  }
+
+  function changeCount() {
+    let n = 0;
+    for (const l in pend.add) n += pend.add[l].size;
+    for (const l in pend.rm) n += pend.rm[l].size;
+    n += Object.keys(pend.set).length + Object.keys(pend.newLists).length + pend.del.size + Object.keys(pend.approve).length;
+    return n;
+  }
+
+  function buildOps() {
+    const ops = [];
+    for (const name in pend.newLists) {
+      const nl = pend.newLists[name];
+      ops.push({op: "new", list: name, label: nl.label, threshold: nl.threshold, floor: nl.floor, chat: nl.chat});
+    }
+    for (const l in pend.add) if (pend.add[l].size) ops.push({op: "add", list: l, symbols: [...pend.add[l]].sort()});
+    for (const l in pend.rm) if (pend.rm[l].size) ops.push({op: "rm", list: l, symbols: [...pend.rm[l]].sort()});
+    for (const l in pend.set) ops.push({op: "set", list: l, ...pend.set[l]});
+    for (const l of pend.del) ops.push({op: "delete", list: l});
+    for (const u in pend.approve) ops.push({op: "approve", user: +u, name: pend.approve[u]});
+    return {v: 1, ops};
+  }
+
+  function sentence(op) {
+    const L = n => (S.lists[n] && S.lists[n].label) || (pend.newLists[n] && pend.newLists[n].label) || n;
+    switch (op.op) {
+      case "add": return `Add ${op.symbols.join(", ")} to ${L(op.list)}.`;
+      case "rm": return `Remove ${op.symbols.join(", ")} from ${L(op.list)}.`;
+      case "set": return `${L(op.list)}: ` + [op.threshold != null ? `alert at ${fmtK(op.threshold)}` : null, op.floor != null ? `floor ${fmtPct(op.floor)}` : null].filter(Boolean).join(", ") + ".";
+      case "new": return `Create ${op.label} (alert at ${fmtK(op.threshold)}, floor ${fmtPct(op.floor)}, cards to ${op.chat === "group" ? "the family group" : "your chat with the bot"}).`;
+      case "delete": return `Delete ${L(op.list)}.`;
+      case "approve": return `Approve ${op.name} to use this page.`;
+    }
+  }
+
+  // ---- rendering ----------------------------------------------------------------------------------
+  function render() {
+    const who = document.getElementById("who");
+    who.textContent = `You: ${userName(S.me)}${S.admin ? " (admin: you can edit every list)" : ""} · data as of ${S.generated || "?"}`;
+
+    const U = document.getElementById("users");
+    U.innerHTML = "";
+    if (S.admin && S.pending && Object.keys(S.pending).length) {
+      for (const id in S.pending) {
+        const d = document.createElement("div"); d.className = "card";
+        const done = pend.approve[id] != null;
+        d.innerHTML = `<h2>${esc(S.pending[id])} asked to use this page</h2><p class="meta">Telegram id ${esc(id)}</p>` +
+          `<button class="btn ${done ? "ghost" : ""}" data-approve="${esc(id)}">${done ? "Will be approved on Save ✓" : "Approve"}</button>`;
+        U.appendChild(d);
+      }
+    }
+
+    const root = document.getElementById("lists");
+    root.innerHTML = "";
+    const names = [...Object.keys(S.lists), ...Object.keys(pend.newLists)];
+    for (const name of names) {
+      const isNew = !!pend.newLists[name];
+      const l = isNew ? pend.newLists[name] : S.lists[name];
+      const editable = canEdit(name);
+      const set = pend.set[name] || {};
+      const k = set.threshold != null ? set.threshold : l.threshold;
+      const floor = set.floor != null ? set.floor : l.floor;
+      const card = document.createElement("div"); card.className = "card";
+      const deleted = pend.del.has(name);
+      card.innerHTML = `<h2>${esc(l.label || name)} ${editable ? "" : '<span class="lock" title="not your list">🔒 read only</span>'}${deleted ? ' <span class="lock">(will be deleted)</span>' : ""}</h2>` +
+        `<p class="meta">${esc(userName(l.owner))} · cards go to ${esc(isNew ? (l.chat === "group" ? "the family group" : "your chat with the bot") : chatName(l.chat_id))} · alert at <b>${fmtK(k)}</b> · floor <b>${floor ? fmtPct(floor) : "off"}</b></p>`;
+
+      const chips = document.createElement("div"); chips.className = "chips";
+      const syms = Object.keys(l.symbols || {}).sort();
+      const adds = [...(pend.add[name] || [])].sort();
+      if (!syms.length && !adds.length) {
+        const e = document.createElement("p"); e.className = "empty"; e.textContent = "No names yet."; card.appendChild(e);
+      }
+      for (const s of syms) {
+        const st = l.symbols[s] || {};
+        const rm = pend.rm[name] && pend.rm[name].has(s);
+        const c = document.createElement("button"); c.type = "button";
+        c.className = "chip" + (editable ? " editable" : "") + (rm ? " rm" : "");
+        const bits = [];
+        if (st.sigma != null) bits.push(`σ ${(st.sigma * 100).toFixed(1)}%`);
+        if (st.next_earnings) bits.push(`earn ${st.next_earnings.slice(5)}`);
+        c.innerHTML = `${esc(s)}${bits.length ? ` <small>${esc(bits.join(" · "))}</small>` : ""}${rm ? ' <span class="x">↶</span>' : (editable ? ' <span class="x">×</span>' : "")}`;
+        c.setAttribute("aria-label", s + (rm ? " (will be removed; tap to keep)" : (editable ? " (tap to remove)" : "")));
+        if (st.last_fire) c.title = "last card: " + st.last_fire;
+        if (editable) c.onclick = () => { pend.rm[name] = pend.rm[name] || new Set(); if (rm) pend.rm[name].delete(s); else pend.rm[name].add(s); render(); };
+        chips.appendChild(c);
+      }
+      for (const s of adds) {
+        const c = document.createElement("button"); c.type = "button"; c.className = "chip add";
+        c.innerHTML = `${esc(s)} <span class="x">×</span>`;
+        c.setAttribute("aria-label", s + " (will be added; tap to undo)");
+        c.onclick = () => { pend.add[name].delete(s); render(); };
+        chips.appendChild(c);
+      }
+      card.appendChild(chips);
+
+      if (editable && !deleted) {
+        const live = syms.length - (pend.rm[name] ? pend.rm[name].size : 0) + adds.length;
+        const addRow = document.createElement("div"); addRow.className = "row";
+        addRow.innerHTML = `<textarea placeholder="Add names: NVDA, AMD …" rows="1" aria-label="Add names to ${esc(l.label || name)}"></textarea><button class="btn">Add</button>`;
+        const ta = addRow.querySelector("textarea"), btn = addRow.querySelector("button");
+        const doAdd = () => {
+          const {ok, bad} = parseSymbols(ta.value);
+          pend.add[name] = pend.add[name] || new Set();
+          let room = MAX_SYMBOLS - live;
+          const over = [];
+          for (const s of ok) {
+            if (l.symbols && l.symbols[s] && !(pend.rm[name] && pend.rm[name].has(s))) continue;   // already there
+            if (pend.rm[name] && pend.rm[name].has(s)) { pend.rm[name].delete(s); continue; }       // un-remove instead
+            if (room <= 0) { over.push(s); continue; }
+            pend.add[name].add(s); room--;
+          }
+          ta.value = "";
+          let msg = "";
+          if (bad.length) msg += `Not tickers: ${bad.join(", ")}. `;
+          if (over.length) msg += `List full (${MAX_SYMBOLS}): ${over.join(", ")} not added.`;
+          notes[name] = msg;
+          render();
+        };
+        btn.onclick = doAdd;
+        ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doAdd(); } };
+        card.appendChild(addRow);
+        if (notes[name]) { const n = document.createElement("p"); n.className = "err"; n.textContent = notes[name]; card.appendChild(n); }
+
+        const settings = document.createElement("div"); settings.className = "grid2";
+        settings.innerHTML = `<div class="row"><label>Alert at</label><input type="number" min="1" max="4" step="0.05" value="${k}" data-k="${esc(name)}"> <span class="hint">σ</span></div>` +
+                             `<div class="row"><label>Floor</label><input type="number" min="0" max="50" step="1" value="${Math.round(floor * 100)}" data-floor="${esc(name)}"> <span class="hint">%</span></div>`;
+        card.appendChild(settings);
+        const hint = document.createElement("p"); hint.className = "hint";
+        hint.textContent = "Alert at = how unusual a day must be before you get a card (1.75σ ≈ once every 12 trading days per name). Floor = a move this big always gets a card.";
+        card.appendChild(hint);
+
+        if (!isNew && !BUILTIN.has(name) && live === 0) {
+          const del = document.createElement("button"); del.className = "btn danger"; del.textContent = "Delete this empty list";
+          del.onclick = () => { pend.del.add(name); render(); };
+          card.appendChild(del);
+        }
+        if (isNew) {
+          const undo = document.createElement("button"); undo.className = "btn ghost"; undo.textContent = "Undo new list";
+          undo.onclick = () => { delete pend.newLists[name]; delete pend.add[name]; render(); };
+          card.appendChild(undo);
+        }
+      } else if (deleted) {
+        const undo = document.createElement("button"); undo.className = "btn ghost"; undo.textContent = "Keep this list";
+        undo.onclick = () => { pend.del.delete(name); render(); };
+        card.appendChild(undo);
+      }
+      root.appendChild(card);
+    }
+
+    root.querySelectorAll("input[data-k]").forEach(i => i.onchange = () => {
+      const name = i.dataset.k, v = Math.round(parseFloat(i.value) * 100) / 100;
+      if (!(v >= K_RANGE[0] && v <= K_RANGE[1])) { notes[name] = `Alert level must be between ${K_RANGE[0]} and ${K_RANGE[1]} σ.`; render(); return; }
+      notes[name] = ""; setField(name, "threshold", v);
+    });
+    root.querySelectorAll("input[data-floor]").forEach(i => i.onchange = () => {
+      const name = i.dataset.floor, v = Math.round(parseFloat(i.value));
+      if (!(v >= FLOOR_RANGE[0] && v <= FLOOR_RANGE[1])) { notes[name] = `Floor must be between ${FLOOR_RANGE[0]} and ${FLOOR_RANGE[1]} %.`; render(); return; }
+      notes[name] = ""; setField(name, "floor", v / 100);
+    });
+    U.querySelectorAll("button[data-approve]").forEach(b => b.onclick = () => {
+      const id = b.dataset.approve;
+      if (pend.approve[id] != null) delete pend.approve[id]; else pend.approve[id] = S.pending[id];
+      render();
+    });
+
+    const n = changeCount();
+    document.getElementById("count").textContent = n ? `${n} change${n > 1 ? "s" : ""} not saved yet` : "No changes yet";
+    document.getElementById("save").disabled = !n;
+    if (inTelegram) {
+      if (n) { tg.MainButton.setText(`Save ${n} change${n > 1 ? "s" : ""}`); tg.MainButton.show(); } else tg.MainButton.hide();
+      document.getElementById("bar").style.display = "none";
+    }
+  }
+
+  function setField(name, field, v) {
+    const isNew = !!pend.newLists[name];
+    if (isNew) { pend.newLists[name][field] = v; render(); return; }
+    const base = S.lists[name][field];
+    pend.set[name] = pend.set[name] || {};
+    if (Math.abs(base - v) < 1e-9) delete pend.set[name][field]; else pend.set[name][field] = v;
+    if (!Object.keys(pend.set[name]).length) delete pend.set[name];
+    render();
+  }
+
+  // ---- new list form --------------------------------------------------------------------------------
+  document.getElementById("nl-add").onclick = () => {
+    const name = document.getElementById("nl-name").value.trim().toLowerCase();
+    const label = document.getElementById("nl-label").value.trim() || null;
+    const k = Math.round(parseFloat(document.getElementById("nl-k").value) * 100) / 100;
+    const floor = Math.round(parseFloat(document.getElementById("nl-floor").value)) / 100;
+    const chat = document.getElementById("nl-chat").value;
+    const err = document.getElementById("nl-err");
+    if (!NAME_RE.test(name)) { err.textContent = "Short name: 1-12 letters or digits, no spaces."; return; }
+    if (S.lists[name] || pend.newLists[name]) { err.textContent = `"${name}" already exists.`; return; }
+    if (Object.keys(S.lists).length + Object.keys(pend.newLists).length >= MAX_LISTS) { err.textContent = `At the cap of ${MAX_LISTS} lists.`; return; }
+    if (!(k >= K_RANGE[0] && k <= K_RANGE[1])) { err.textContent = "Alert level must be between 1 and 4 σ."; return; }
+    if (!(floor >= 0 && floor <= 0.5)) { err.textContent = "Floor must be between 0 and 50 %."; return; }
+    err.textContent = "";
+    pend.newLists[name] = {owner: S.me, label: label || `${userName(S.me)}'s ${name} list`, threshold: k, floor, chat, symbols: {}};
+    ["nl-name", "nl-label"].forEach(id => document.getElementById(id).value = "");
+    document.querySelector("#newlist details").open = false;
+    render();
+  };
+
+  // ---- save -------------------------------------------------------------------------------------------
+  function openSheet() {
+    const diff = buildOps();
+    const json = JSON.stringify(diff);
+    const ul = document.getElementById("sheet-list"); ul.innerHTML = "";
+    diff.ops.forEach(op => { const li = document.createElement("li"); li.textContent = sentence(op); ul.appendChild(li); });
+    const tooBig = new TextEncoder().encode(json).length > MAX_DIFF;
+    document.getElementById("sheet-hint").textContent = tooBig
+      ? `Too many changes at once (${json.length} bytes, limit ${MAX_DIFF}). Save in two steps.`
+      : (inTelegram ? "The page closes and the bot confirms in the chat." : "Demo mode: nothing is sent. This is what the bot would receive.");
+    document.getElementById("sheet-send").disabled = tooBig;
+    const raw = document.getElementById("sheet-raw"); raw.style.display = inTelegram ? "none" : "block";
+    document.getElementById("sheet-json").textContent = JSON.stringify(diff, null, 1);
+    document.getElementById("sheet").classList.add("open");
+  }
+  function send() {
+    const json = JSON.stringify(buildOps());
+    if (inTelegram) tg.sendData(json);           // Telegram closes the page and delivers it to the bot
+    else { console.log("would send", json); document.getElementById("sheet").classList.remove("open"); }
+  }
+  document.getElementById("save").onclick = openSheet;
+  document.getElementById("sheet-back").onclick = () => document.getElementById("sheet").classList.remove("open");
+  document.getElementById("sheet-send").onclick = send;
+  if (inTelegram) { tg.ready(); tg.expand(); tg.MainButton.onClick(openSheet); }
+
+  // ---- boot ---------------------------------------------------------------------------------------------
+  readState().then(state => {
+    const banner = document.getElementById("banner");
+    if (!state) {
+      S = DEMO;
+      banner.innerHTML = '<div class="banner">Opened outside Telegram: this is a <b>demo</b> with sample data. Open it from the bot\'s "Manage lists" button to see your real lists.</div>';
+    } else if (state.error) {
+      S = DEMO;
+      banner.innerHTML = '<div class="banner">The data in this link could not be read. Type /lists in the bot chat to get a fresh button. Showing demo data.</div>';
+    } else {
+      S = state;
+      if (S.trimmed) banner.innerHTML = '<div class="banner">Per-name stats omitted: too many names to fit in the link.</div>';
+    }
+    S.users = S.users || {}; S.chats = S.chats || {}; S.pending = S.pending || {};
+    render();
+  });
+})();
+</script>
+</body>
+</html>
