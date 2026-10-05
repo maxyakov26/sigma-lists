@@ -47,6 +47,8 @@
   .chip { border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; min-height: 40px;
     display: inline-flex; align-items: center; gap: 6px; background: transparent; color: var(--text); font-size: 15px; }
   .chip small { color: var(--muted); font-size: 12px; }
+  .chip small.last { display: block; font-size: 11px; margin-top: 2px; }
+  .chip > span:first-child { display: inline-block; text-align: left; }
   .chip.editable { cursor: pointer; }
   .chip.rm { text-decoration: line-through; color: var(--rm); background: var(--rm-bg); border-color: transparent; }
   .chip.add { color: var(--add); background: var(--add-bg); border-color: transparent; font-weight: 600; }
@@ -263,10 +265,10 @@
         c.className = "chip" + (editable ? " editable" : "") + (rm ? " rm" : "");
         const bits = [];
         if (st.sigma != null) bits.push(`σ ${(st.sigma * 100).toFixed(1)}%`);
-        if (st.next_earnings) bits.push(`earn ${st.next_earnings.slice(5)}`);
-        c.innerHTML = `${esc(s)}${bits.length ? ` <small>${esc(bits.join(" · "))}</small>` : ""}${rm ? ' <span class="x">↶</span>' : (editable ? ' <span class="x">×</span>' : "")}`;
+        if (st.next_earnings) bits.push(`earnings ${st.next_earnings.slice(5).replace("-", "/")}`);
+        const last = st.last_fire ? `<small class="last">last card ${esc(st.last_fire.replace(/^(\d{4})-(\d{2})-(\d{2}) /, "$2/$3 "))}</small>` : "";
+        c.innerHTML = `<span>${esc(s)}${bits.length ? ` <small>${esc(bits.join(" · "))}</small>` : ""}${last}</span>${rm ? ' <span class="x">↶</span>' : (editable ? ' <span class="x">×</span>' : "")}`;
         c.setAttribute("aria-label", s + (rm ? " (will be removed; tap to keep)" : (editable ? " (tap to remove)" : "")));
-        if (st.last_fire) c.title = "last card: " + st.last_fire;
         if (editable) c.onclick = () => { pend.rm[name] = pend.rm[name] || new Set(); if (rm) pend.rm[name].delete(s); else pend.rm[name].add(s); render(); };
         chips.appendChild(c);
       }
