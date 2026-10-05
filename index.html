@@ -130,7 +130,10 @@
   const K_RANGE = [1, 4], FLOOR_RANGE = [0, 50], NAME_RE = /^[a-z0-9]{1,12}$/, SYM_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;
   const MAX_DIFF = 4096, MAX_SYMBOLS = 40, MAX_LISTS = 10;
   const tg = window.Telegram && window.Telegram.WebApp;
-  const inTelegram = !!(tg && tg.initData);
+  // A Mini App opened from a keyboard button carries NO initData (Telegram vouches for the user
+  // through the web_app_data service message instead), so initData cannot tell "inside Telegram"
+  // from "opened in a browser". The tgWebAppPlatform launch param can: it is "unknown" only outside.
+  const inTelegram = !!(tg && (tg.initData || (tg.platform && tg.platform !== "unknown")));
 
   // ---- demo state, used only when the page is opened outside Telegram ------------------------
   const DEMO = {
@@ -223,7 +226,8 @@
   // ---- rendering ----------------------------------------------------------------------------------
   function render() {
     const who = document.getElementById("who");
-    who.textContent = `You: ${userName(S.me)}${S.admin ? " (admin: you can edit every list)" : ""} · data as of ${S.generated || "?"}`;
+    who.textContent = `You: ${userName(S.me)}${S.admin ? " (admin: you can edit every list)" : ""} · data as of ${S.generated || "?"}` +
+      (inTelegram ? ` · Telegram ${tg.platform}` : "");
 
     const U = document.getElementById("users");
     U.innerHTML = "";
@@ -355,7 +359,8 @@
     document.getElementById("count").textContent = n ? `${n} change${n > 1 ? "s" : ""} not saved yet` : "No changes yet";
     document.getElementById("save").disabled = !n;
     if (inTelegram) {
-      if (n) { tg.MainButton.setText(`Save ${n} change${n > 1 ? "s" : ""}`); tg.MainButton.show(); } else tg.MainButton.hide();
+      if (n) { tg.MainButton.setText(sheetOpen ? (sheetTooBig ? "Too many changes" : "Send") : `Save ${n} change${n > 1 ? "s" : ""}`); tg.MainButton.show(); }
+      else tg.MainButton.hide();
       document.getElementById("bar").style.display = "none";
     }
   }
@@ -391,7 +396,9 @@
   };
 
   // ---- save -------------------------------------------------------------------------------------------
+  let sheetOpen = false, sheetTooBig = false;   // Telegram's main button reads "Save N changes", then "Send"
   function openSheet() {
+    if (!changeCount()) return;
     const diff = buildOps();
     const json = JSON.stringify(diff);
     const ul = document.getElementById("sheet-list"); ul.innerHTML = "";
@@ -404,23 +411,38 @@
     const raw = document.getElementById("sheet-raw"); raw.style.display = inTelegram ? "none" : "block";
     document.getElementById("sheet-json").textContent = JSON.stringify(diff, null, 1);
     document.getElementById("sheet").classList.add("open");
+    sheetOpen = true; sheetTooBig = tooBig;
+    render();
+  }
+  function closeSheet() {
+    sheetOpen = false; sheetTooBig = false;
+    document.getElementById("sheet").classList.remove("open");
+    render();
   }
   function send() {
+    if (sheetTooBig) return;
     const json = JSON.stringify(buildOps());
-    if (inTelegram) tg.sendData(json);           // Telegram closes the page and delivers it to the bot
-    else { console.log("would send", json); document.getElementById("sheet").classList.remove("open"); }
+    if (!inTelegram) { console.log("would send", json); closeSheet(); return; }
+    try {
+      tg.sendData(json);                         // Telegram closes the page and delivers it to the bot
+    } catch (e) {
+      document.getElementById("sheet-hint").textContent =
+        `Could not send (${e && e.message ? e.message : e}). Type /lists in the chat for a fresh button and try again.`;
+    }
   }
   document.getElementById("save").onclick = openSheet;
-  document.getElementById("sheet-back").onclick = () => document.getElementById("sheet").classList.remove("open");
+  document.getElementById("sheet-back").onclick = closeSheet;
   document.getElementById("sheet-send").onclick = send;
-  if (inTelegram) { tg.ready(); tg.expand(); tg.MainButton.onClick(openSheet); }
+  if (inTelegram) { tg.ready(); tg.expand(); tg.MainButton.onClick(() => sheetOpen ? send() : openSheet()); }
 
   // ---- boot ---------------------------------------------------------------------------------------------
   readState().then(state => {
     const banner = document.getElementById("banner");
     if (!state) {
       S = DEMO;
-      banner.innerHTML = '<div class="banner">Opened outside Telegram: this is a <b>demo</b> with sample data. Open it from the bot\'s "Manage lists" button to see your real lists.</div>';
+      banner.innerHTML = inTelegram
+        ? '<div class="banner">The button\'s link carried no list data (Telegram ' + esc(tg.platform) + '). Type /lists in the chat for a fresh button. Showing <b>demo</b> data; nothing can be saved from it.</div>'
+        : '<div class="banner">Opened outside Telegram: this is a <b>demo</b> with sample data. Open it from the bot\'s "Manage lists" button to see your real lists.</div>';
     } else if (state.error) {
       S = DEMO;
       banner.innerHTML = '<div class="banner">The data in this link could not be read. Type /lists in the bot chat to get a fresh button. Showing demo data.</div>';
